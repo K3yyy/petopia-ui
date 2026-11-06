@@ -1,5 +1,7 @@
-import { request } from "./api-client";
+import { query, request } from "./api-client";
 export const profileService = {
+  search: (name) =>
+    request("get", "/profiles/search", null, query({ q: name })),
   me: () => request("get", "/profiles/me"),
   update: (body) => request("patch", "/profiles/me", body),
   verify: (body) => request("post", "/profiles/seller-verification", body),

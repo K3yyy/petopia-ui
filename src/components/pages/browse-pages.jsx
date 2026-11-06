@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input, Label } from "@/components/ui/field";
+import { Input, Label, Select } from "@/components/ui/field";
 import {
   Notice,
   PageTitle,
@@ -38,7 +38,9 @@ export function Listing({ type = "pets", params = EMPTY_PARAMS }) {
     [search, setSearch] = useState(params.search || ""),
     [reportType, setReportType] = useState(""),
     [offset, setOffset] = useState(0),
-    [filters, setFilters] = useState({});
+    [filters, setFilters] = useState({
+      listingType: params.listingType || "",
+    });
   const load = useCallback(
     async (extra = {}) => {
       setBusy(true);
@@ -144,13 +146,37 @@ export function Listing({ type = "pets", params = EMPTY_PARAMS }) {
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {[
-              ["animalType", "Animal type"],
-              ["breed", "Breed"],
-              ["gender", "Gender"],
-              ["location", "Location"],
-              ["minPrice", "Minimum price"],
-              ["maxPrice", "Maximum price"],
-            ].map(([key, label]) => (
+              ["animalType", "Animal type", ["Dog", "Cat", "Bird", "Rabbit", "Other"]],
+              ["listingType", "Listing type", ["Adoption", "Sale", "Rehoming"]],
+              ["gender", "Gender", ["Male", "Female"]],
+              ["age", "Age", ["Baby", "Young", "Adult", "Senior"]],
+            ].map(([key, label, options]) => (
+              <div key={key}>
+                <Label htmlFor={`filter-${key}`}>{label}</Label>
+                <Select
+                  id={`filter-${key}`}
+                  value={filters[key] || ""}
+                  onChange={(e) =>
+                    setFilters((v) => ({ ...v, [key]: e.target.value }))
+                  }
+                >
+                  <option value="">All</option>
+                  {options.map((option) => (
+                    <option key={option} value={option.toLowerCase()}>{option}</option>
+                  ))}
+                </Select>
+              </div>
+            ))}
+            <div>
+              <Label htmlFor="filter-location">Location</Label>
+              <Input
+                id="filter-location"
+                value={filters.location || ""}
+                onChange={(e) => setFilters((v) => ({ ...v, location: e.target.value }))}
+                placeholder="City or area"
+              />
+            </div>
+            {[ ["breed", "Breed"], ["minPrice", "Minimum price"], ["maxPrice", "Maximum price"] ].map(([key, label]) => (
               <div key={key}>
                 <Label htmlFor={`filter-${key}`}>{label}</Label>
                 <Input
@@ -158,16 +184,25 @@ export function Listing({ type = "pets", params = EMPTY_PARAMS }) {
                   type={key.includes("Price") ? "number" : "text"}
                   min={key.includes("Price") ? "0" : undefined}
                   value={filters[key] || ""}
-                  onChange={(e) =>
-                    setFilters((v) => ({ ...v, [key]: e.target.value }))
-                  }
+                  onChange={(e) => setFilters((v) => ({ ...v, [key]: e.target.value }))}
                 />
               </div>
             ))}
           </div>
-          <Button type="submit" variant="outline" className="mt-3">
-            Apply filters
-          </Button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="submit" variant="outline">Apply filters</Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                const cleared = { listingType: "" };
+                setFilters(cleared);
+                load({ ...cleared, search, offset: 0 });
+              }}
+            >
+              Clear filters
+            </Button>
+          </div>
         </form>
       )}
       {report && (

@@ -6,9 +6,11 @@ import { useForm } from "react-hook-form";
 import {
   CircleDollarSign,
   Heart,
+  LoaderCircle,
   MessageCircle,
   PawPrint,
   Plus,
+  Search,
   UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -251,7 +253,6 @@ export function Dashboard({
           ["create-pet", "Create listing"],
           ["applications", "My applications"],
           ["donations", "My donations"],
-          ["my-reports", "My reports"],
           ["seller-applications", "Applications received"],
           ["payments", "Payments"],
           ["seller-payments", "Seller payments"],
@@ -709,9 +710,15 @@ export function Messages({ profile }) {
   const [items, setItems] = useState([]),
     [error, setError] = useState(""),
     [peer, setPeer] = useState(""),
+    [peerName, setPeerName] = useState(""),
     [rows, setRows] = useState([]),
     [body, setBody] = useState(""),
-    [unread, setUnread] = useState(0);
+    [unread, setUnread] = useState(0),
+    [search, setSearch] = useState(""),
+    [matches, setMatches] = useState([]),
+    [searchBusy, setSearchBusy] = useState(false),
+    [searchError, setSearchError] = useState(""),
+    [searched, setSearched] = useState(false);
   useEffect(() => {
     messageService
       .conversations()
@@ -722,8 +729,43 @@ export function Messages({ profile }) {
       .then((r) => setUnread(Number(r.data?.count || 0)))
       .catch((e) => setError(e.message));
   }, []);
+  useEffect(() => {
+    const name = search.trim();
+    if (name.length < 2) return;
+
+    let active = true;
+    const timer = setTimeout(async () => {
+      if (!active) return;
+      setSearchBusy(true);
+      try {
+        const result = await profileService.search(name);
+        if (!active) return;
+        const ownId = profile?.id == null ? null : String(profile.id);
+        setMatches(
+          asArray(result.data).filter(
+            (person) => String(person.id) !== ownId,
+          ),
+        );
+        setSearched(true);
+      } catch (e) {
+        if (active) {
+          setMatches([]);
+          setSearchError(e.message);
+          setSearched(true);
+        }
+      } finally {
+        if (active) setSearchBusy(false);
+      }
+    }, 350);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [profile?.id, search]);
   const open = async (id) => {
     setPeer(String(id));
+    setError("");
     try {
       const r = await messageService.conversation(id, { limit: 50, offset: 0 });
       const messages = asArray(r.data);
@@ -750,7 +792,7 @@ export function Messages({ profile }) {
   };
   const send = async () => {
     if (!/^\d+$/.test(peer) || !body.trim()) {
-      setError("Enter a numeric profile ID and a message.");
+      setError("Choose a person to message and enter a message.");
       return;
     }
     if (String(profile?.id) === peer) {
@@ -769,34 +811,140 @@ export function Messages({ profile }) {
     <>
       <PageTitle
         title="Messages"
-        description="Choose a conversation, or enter the other person's profile ID to read a thread."
+        description="Search for someone by name or continue an existing conversation."
       />
       <p className="mb-4 text-sm text-slate-500">Unread messages: {unread}</p>
       {error && <Notice>{error}</Notice>}
-      <div className="grid gap-4 md:grid-cols-[240px_1fr]">
-        <div className="space-y-2">
-          {items.map((i) => (
-            <button
-              onClick={() => open(i.peer_id)}
-              key={i.peer_id}
-              className="w-full rounded-xl border bg-white p-3 text-left text-sm"
-            >
-              Conversation with profile {i.peer_id}
-              <br />
-              <span className="text-slate-500">{i.message}</span>
-            </button>
-          ))}
-          <Input
-            value={peer}
-            onChange={(e) => setPeer(e.target.value)}
-            placeholder="Profile ID"
-          />
-          <Button variant="outline" onClick={() => open(peer)}>
-            Open conversation
-          </Button>
+      <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="p-4">
+              <label
+                htmlFor="people-search"
+                className="mb-2 block text-sm font-semibold text-slate-800"
+              >
+                Start a conversation
+              </label>
+              <div className="relative">
+                <Search
+                  size={17}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <Input
+                  id="people-search"
+                  type="search"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setMatches([]);
+                    setSearchError("");
+                    setSearched(false);
+                    setSearchBusy(false);
+                  }}
+                  placeholder="Search people by name..."
+                  autoComplete="off"
+                  className="pr-10 pl-10"
+                  aria-describedby="people-search-hint"
+                  aria-busy={searchBusy}
+                />
+                {searchBusy && (
+                  <LoaderCircle
+                    size={17}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-blue-600"
+                    aria-label="Searching people"
+                  />
+                )}
+              </div>
+              <p id="people-search-hint" className="mt-2 text-xs text-slate-500">
+                Search by name using at least two characters.
+              </p>
+              {searchError && (
+                <div className="mt-3">
+                  <Notice>{searchError}</Notice>
+                </div>
+              )}
+              {!searchBusy && searched && !searchError && matches.length === 0 && (
+                <p role="status" className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
+                  No users found
+                </p>
+              )}
+              {matches.length > 0 && (
+                <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto" aria-label="People matching your search">
+                  {matches.map((person) => (
+                    <li key={person.id}>
+                      <div className="flex items-center gap-3 rounded-xl border border-slate-100 p-2.5">
+                        {person.profile_image ? (
+                          // Profile images are public API URLs and can use any configured storage host.
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={person.profile_image}
+                            alt=""
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            className="h-10 w-10 shrink-0 rounded-full object-cover"
+                          />
+                        ) : (
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700" aria-hidden="true">
+                            {person.full_name?.trim()?.charAt(0)?.toUpperCase() || <UserRound size={18} />}
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
+                          {person.full_name}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="px-3 py-2"
+                          onClick={() => {
+                            setPeerName(person.full_name);
+                            open(person.id);
+                          }}
+                          aria-label={`Chat with ${person.full_name}`}
+                        >
+                          <MessageCircle size={15} />
+                          Chat
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <section aria-labelledby="conversations-heading">
+            <h2 id="conversations-heading" className="mb-2 text-sm font-semibold text-slate-800">
+              Conversations
+            </h2>
+            <div className="space-y-2">
+              {items.map((i) => (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPeerName("");
+                    open(i.peer_id);
+                  }}
+                  key={i.peer_id}
+                  className={`w-full rounded-xl border p-3 text-left text-sm ${peer === String(i.peer_id) ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}
+                >
+                  Conversation with profile {i.peer_id}
+                  <br />
+                  <span className="line-clamp-2 text-slate-500">{i.message}</span>
+                </button>
+              ))}
+              {items.length === 0 && (
+                <p className="rounded-xl border border-dashed bg-white p-4 text-sm text-slate-500">
+                  No conversations yet.
+                </p>
+              )}
+            </div>
+          </section>
         </div>
         <Card>
           <CardContent>
+            <div className="mb-3 border-b border-slate-100 pb-3 text-sm font-semibold text-slate-800">
+              {peer ? peerName || `Conversation with profile ${peer}` : "Select a conversation"}
+            </div>
             <div className="max-h-80 space-y-3 overflow-y-auto">
               {rows.map((r, i) => (
                 <div
